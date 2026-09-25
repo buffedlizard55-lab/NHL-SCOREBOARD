@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Smoke test for docs/app.js — evaluates the real file in a stubbed browser
+ * Smoke test for app.js — evaluates the real file in a stubbed browser
  * context and exercises the core logic (states, labels, play descriptions,
  * name resolution). No external network.
  *
