@@ -36,7 +36,11 @@ permissions:
 
 concurrency:
   group: nhl-data-snapshot
-  cancel-in-progress: true
+  # Queue instead of cancel: the first run after adding the season/archive
+  # snapshot phases backfills ~200 historical dates (capped at 60 per run and
+  # fully resumable) and must never be killed mid-run by the next cron tick.
+  # Runs still execute serially, so nothing piles up.
+  cancel-in-progress: false
 
 jobs:
   snapshot:

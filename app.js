@@ -118,6 +118,79 @@ function seriesLine(s) {
 }
 
 /* ------------------------------------------------------------------ */
+/* season utilities (pure — unit-tested in tools/test-app.mjs)         */
+/* ------------------------------------------------------------------ */
+
+const FIRST_NHL_SEASON = 19171918;      // league's first season (verified vs official API)
+const CANCELLED_SEASON = 20042005;      // cancelled outright — no games exist (API returns 404)
+
+/** Season id for a calendar date: 2026-09-25 -> 20262027, 2026-06-14 -> 20252026. */
+function seasonForDate(dateStr) {
+  const [y, m] = String(dateStr || '').split('-').map(Number);
+  if (!y || !m) return null;
+  const startYear = m >= 7 ? y : y - 1;
+  return startYear * 10000 + (startYear + 1);
+}
+
+/** "20252026" -> "2025-26" */
+function seasonLabel(seasonId) {
+  const s = String(seasonId);
+  return `${s.slice(0, 4)}-${s.slice(6)}`;
+}
+
+/**
+ * Every NHL season id from 1917-18 through `currentSeasonId`, oldest first,
+ * excluding 2004-05 (cancelled — the official API returns 404 for it).
+ */
+function seasonList(currentSeasonId) {
+  const list = [];
+  for (let s = FIRST_NHL_SEASON; s <= currentSeasonId; s += 10001) {
+    if (s === CANCELLED_SEASON) continue;
+    list.push(s);
+  }
+  return list;
+}
+
+/** Result of one game from a club's perspective; null when not yet played. */
+function gameResultFor(game, teamAbbrev) {
+  const isHome = game.homeTeam?.abbrev === teamAbbrev;
+  const us = isHome ? game.homeTeam : game.awayTeam;
+  const them = isHome ? game.awayTeam : game.homeTeam;
+  if (us?.score == null || them?.score == null) return null;
+  const extra = game.gameOutcome?.lastPeriodType;
+  const suffix = extra === 'OT' ? '-OT' : extra === 'SO' ? '-SO' : '';
+  if (us.score > them.score) return { code: 'W', label: `W${suffix}`, win: true };
+  if (us.score < them.score) return { code: suffix ? 'OTL' : 'L', label: suffix ? `L${suffix}` : 'L', win: false };
+  return { code: 'T', label: 'T', win: false }; // ties existed before 2005-06
+}
+
+/**
+ * Club record computed from official per-game results.
+ * Points follow the league rules of the era: the OT-loss point was introduced
+ * in 1999-2000, so OT losses before that count as plain losses (0 points).
+ */
+function seasonRecord(games, teamAbbrev, seasonId) {
+  const rec = { w: 0, l: 0, t: 0, otl: 0, pts: 0, gf: 0, ga: 0, gp: 0 };
+  const otlWorthPoint = seasonId == null || seasonId >= 19992000;
+  for (const g of games || []) {
+    const isHome = g.homeTeam?.abbrev === teamAbbrev;
+    const us = isHome ? g.homeTeam : g.awayTeam;
+    const them = isHome ? g.awayTeam : g.homeTeam;
+    if (us?.score == null || them?.score == null) continue;
+    rec.gp += 1;
+    rec.gf += us.score;
+    rec.ga += them.score;
+    const r = gameResultFor(g, teamAbbrev);
+    if (!r) continue;
+    if (r.code === 'W') { rec.w += 1; rec.pts += 2; }
+    else if (r.code === 'T') { rec.t += 1; rec.pts += 1; }
+    else if (r.code === 'OTL') { rec.otl += 1; if (otlWorthPoint) rec.pts += 1; }
+    else rec.l += 1;
+  }
+  return rec;
+}
+
+/* ------------------------------------------------------------------ */
 /* data layer                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -231,7 +304,7 @@ function switchView(name) {
     t.classList.toggle('active', active);
     t.setAttribute('aria-selected', active ? 'true' : 'false');
   });
-  for (const v of ['board', 'game', 'standings', 'about']) {
+  for (const v of ['board', 'game', 'seasons', 'standings', 'about']) {
     $(`#view-${v}`).hidden = v !== name;
   }
 }
@@ -241,6 +314,12 @@ async function route() {
   const parts = hash.replace(/^#\//, '').split('/').filter(Boolean);
   if (parts[0] === 'standings') { switchView('standings'); renderStandings(); }
   else if (parts[0] === 'about') { switchView('about'); }
+  else if (parts[0] === 'seasons') { switchView('seasons'); renderSeasons(null, null); }
+  else if (parts[0] === 'season' && parts[1]) {
+    switchView('seasons');
+    const season = parts[2] != null && Number.isInteger(Number(parts[2])) ? Number(parts[2]) : null;
+    renderSeasons(parts[1].toUpperCase(), season);
+  }
   else if (parts[0] === 'game' && parts[1]) { switchView('game'); renderGameView(parts[1], parts[2] || null); }
   else { switchView('board'); renderBoard(parts[1] || null); }
 }
@@ -267,11 +346,14 @@ async function renderBoard(date) {
 
   const payload = await fetchScore(date);
   if (!payload) {
+    const officialDate = date ? `${API_BASE}/score/${encodeURIComponent(date)}` : `${API_BASE}/score/now`;
     content.innerHTML = `
       <div class="notice">
-        Could not load the NHL scoreboard right now.<br>
+        Could not load the NHL scoreboard right now (no local snapshot for this date, and the
+        NHL API sends no cross-origin permission for browsers).<br>
         You can always check the official source directly:
-        <div><a class="btn" href="${NHL_BASE}/scores" target="_blank" rel="noopener">Open NHL.com Scores ↗</a>
+        <div><a class="btn" href="${officialDate}" target="_blank" rel="noopener">Raw official scoreboard JSON ↗</a>
+        <a class="btn" href="${NHL_BASE}/scores" target="_blank" rel="noopener">NHL.com Scores ↗</a>
         <button class="btn" onclick="route()">Try again</button></div>
       </div>`;
     setStatus('warn', 'Data unavailable', `Failed to reach ${API_BASE}`);
@@ -471,7 +553,7 @@ function drawGameDetail() {
     <div id="detail-body"></div>`;
 
   const body = $('#detail-body');
-  const nameMap = buildNameMap(box);
+  const nameMap = buildNameMap(box, pbp);
 
   let html = '<div class="detail-grid">';
 
@@ -489,6 +571,16 @@ function drawGameDetail() {
     html += `<div>${boxscoreHtml(box)}</div>`;
   } else if (game && !isFinalGame(game) && !live) {
     html += `<div><div class="notice">No box score published for this game yet.</div></div>`;
+  } else if ((game && isFinalGame(game)) || pbp) {
+    html += `<div><div class="notice">
+      Full box score and play-by-play for this game aren't stored in the local archive
+      (they're fetched live only for recent games). Everything above is official —
+      and the complete record is always available at the
+      <a href="${NHL_BASE}${esc(game?.gameCenterLink || head.gameCenterLink || '')}" target="_blank" rel="noopener">official NHL.com Game Center ↗</a>
+      or the raw official APIs:
+      <a href="${API_BASE}/gamecenter/${esc(state.game.id)}/play-by-play" target="_blank" rel="noopener">play-by-play JSON ↗</a> ·
+      <a href="${API_BASE}/gamecenter/${esc(state.game.id)}/boxscore" target="_blank" rel="noopener">boxscore JSON ↗</a>.
+    </div></div>`;
   }
   html += '</div>';
 
@@ -546,15 +638,26 @@ function goalRow(g, away, home) {
   </div>`;
 }
 
-function buildNameMap(box) {
+function buildNameMap(box, pbp) {
   const map = new Map();
-  if (!box?.playerByGameStats) return map;
-  for (const side of ['awayTeam', 'homeTeam']) {
-    const groups = box.playerByGameStats[side] || {};
-    for (const groupKey of ['forwards', 'defense', 'goalies']) {
-      for (const p of groups[groupKey] || []) {
-        map.set(p.playerId, localized(p.name));
+  if (box?.playerByGameStats) {
+    for (const side of ['awayTeam', 'homeTeam']) {
+      const groups = box.playerByGameStats[side] || {};
+      for (const groupKey of ['forwards', 'defense', 'goalies']) {
+        for (const p of groups[groupKey] || []) {
+          map.set(p.playerId, localized(p.name));
+        }
       }
+    }
+  }
+  // Older games (verified back to 1917) have no boxscore payload, but the
+  // official play-by-play response carries a full rosterSpots array.
+  for (const spot of pbp?.rosterSpots || []) {
+    if (spot?.playerId != null && !map.has(spot.playerId)) {
+      const first = localized(spot.firstName);
+      const last = localized(spot.lastName);
+      const full = [first, last].filter(Boolean).join(' ');
+      if (full) map.set(spot.playerId, full);
     }
   }
   return map;
@@ -808,6 +911,171 @@ async function renderStandings() {
       </div></div>`;
   }
   content.innerHTML = html;
+}
+
+/* ------------------------------------------------------------------ */
+/* seasons browser                                                     */
+/* ------------------------------------------------------------------ */
+
+function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function lsSet(key, value) { try { localStorage.setItem(key, value); } catch { /* private mode */ } }
+
+async function loadTeamOptions() {
+  const data = await fetchOfficial('/standings/now', 'standings');
+  const rows = data?.standings;
+  if (Array.isArray(rows) && rows.length) {
+    return rows
+      .map((t) => ({ abbrev: t.teamAbbrev?.default, name: localized(t.teamName) || t.teamAbbrev?.default }))
+      .filter((t) => t.abbrev)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }
+  // Standings unavailable → fall back to the club list recorded in the manifest.
+  return (manifest?.seasons?.teams || []).map((a) => ({ abbrev: a, name: a }));
+}
+
+async function renderSeasons(team, season) {
+  const content = $('#seasons-content');
+  content.innerHTML = '<div class="notice"><span class="spinner"></span>Loading the official season index…</div>';
+
+  const currentSeason = manifest?.seasons?.current
+    || seasonForDate(manifest?.currentDate || fmtDateInput(new Date()));
+  if (!team) team = lsGet('nhl-season-team') || 'MTL';
+  if (!season) season = currentSeason;
+  lsSet('nhl-season-team', team);
+
+  const teams = await loadTeamOptions();
+  const seasons = seasonList(currentSeason);
+
+  const teamOptions = teams.some((t) => t.abbrev === team)
+    ? teams
+    : [{ abbrev: team, name: team }, ...teams];
+  const seasonOptsHtml = seasons
+    .slice().reverse() // newest first in the dropdown
+    .map((s) => `<option value="${s}"${s === season ? ' selected' : ''}>${seasonLabel(s)}${s === currentSeason ? ' (current)' : ''}</option>`)
+    .join('');
+  const teamOptsHtml = teamOptions
+    .map((t) => `<option value="${esc(t.abbrev)}"${t.abbrev === team ? ' selected' : ''}>${esc(t.name)} (${esc(t.abbrev)})</option>`)
+    .join('');
+
+  content.innerHTML = `
+    <div class="season-controls panel">
+      <label>Team <select id="season-team" aria-label="Team">${teamOptsHtml}</select></label>
+      <label>Season <select id="season-year" aria-label="Season">${seasonOptsHtml}</select></label>
+      <span class="hint">Every NHL season since 1917-18 · 2004-05 was cancelled (no games)</span>
+    </div>
+    <div id="season-body"></div>`;
+
+  $('#season-team').addEventListener('change', (e) => {
+    location.hash = `#/season/${e.target.value}/${season}`;
+  });
+  $('#season-year').addEventListener('change', (e) => {
+    location.hash = `#/season/${team}/${e.target.value}`;
+  });
+
+  const body = $('#season-body');
+  const payload = await fetchOfficial(`/club-schedule-season/${team}/${season}`, `season:${team}:${season}`);
+  if (!payload || !Array.isArray(payload.games)) {
+    body.innerHTML = `<div class="notice">
+      The official season index for <strong>${esc(team)} ${esc(seasonLabel(season))}</strong> isn't in the local
+      snapshot, and the NHL API can't be read directly from the browser (no cross-origin permission),
+      so it can't be loaded right now.<br>
+      Review the official source directly:
+      <a class="btn" href="${API_BASE}/club-schedule-season/${encodeURIComponent(team)}/${season}" target="_blank" rel="noopener">Raw official JSON ↗</a>
+      <a class="btn" href="${NHL_BASE}/scores" target="_blank" rel="noopener">NHL.com Scores ↗</a>
+    </div>`;
+    setStatus('warn', 'Season index unavailable', 'Not in the local snapshot; direct fetch blocked by CORS.');
+    return;
+  }
+  describeTransport();
+
+  const games = payload.games;
+  const rec = seasonRecord(games, team, season);
+  const detailAvailable = (g) => Boolean(manifest?.files?.[`pbp:${g.id}`]);
+
+  if (!games.length) {
+    body.innerHTML = `<div class="notice">
+      The official NHL records show <strong>no games for ${esc(team)} in ${esc(seasonLabel(season))}</strong>
+      (clubs that had not yet joined the league — or historical abbreviations that differ from today's,
+      e.g. the Hartford Whalers are <code>HFD</code>, not <code>CAR</code> — return an empty list).
+      <div><a class="btn" href="${API_BASE}/club-schedule-season/${encodeURIComponent(team)}/${season}" target="_blank" rel="noopener">Verify at the official API ↗</a></div>
+    </div>`;
+    return;
+  }
+
+  const recordStrip = rec.gp
+    ? `<div class="record-strip">
+        <span><b>${rec.w}</b> W</span><span><b>${rec.l}</b> L</span>
+        ${rec.t ? `<span><b>${rec.t}</b> T</span>` : ''}
+        ${rec.otl ? `<span><b>${rec.otl}</b> OTL</span>` : ''}
+        <span class="pts"><b>${rec.pts}</b> PTS</span>
+        <span>GF <b>${rec.gf}</b></span><span>GA <b>${rec.ga}</b></span>
+        <span class="hint">record computed from the official game results above</span>
+      </div>`
+    : '';
+
+  // Newest first, grouped by month.
+  const sorted = [...games].sort((a, b) => String(b.gameDate).localeCompare(String(a.gameDate)));
+  const groups = [];
+  let currentKey = null;
+  for (const g of sorted) {
+    const key = String(g.gameDate || '').slice(0, 7);
+    if (key !== currentKey) { groups.push({ key, games: [] }); currentKey = key; }
+    groups[groups.length - 1].games.push(g);
+  }
+
+  const monthTitle = (key) => {
+    try {
+      return new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' })
+        .format(new Date(`${key}-15T12:00:00`));
+    } catch { return key; }
+  };
+
+  body.innerHTML = `
+    <p class="verified-on">Official ${esc(seasonLabel(season))} schedule &amp; results for ${esc(team)} ·
+      source: <a href="${API_BASE}/club-schedule-season/${encodeURIComponent(team)}/${season}" rel="noopener">api-web.nhle.com/v1/club-schedule-season/${esc(team)}/${season}</a>
+      ${payload.fetchedAt ? `· snapshot ${esc(payload.fetchedAt.replace('T', ' ').slice(0, 16))} UTC` : ''}</p>
+    ${recordStrip}
+    ${groups.map((grp) => `
+      <div class="season-group">
+        <div class="season-month">${esc(monthTitle(grp.key))}</div>
+        ${grp.games.map((g) => seasonRow(g, team, detailAvailable(g))).join('')}
+      </div>`).join('')}`;
+
+  body.querySelectorAll('[data-open]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      location.hash = `#/game/${btn.dataset.open}/${btn.dataset.date || ''}`;
+    });
+  });
+}
+
+function seasonRow(g, teamAbbrev, detailAvailable) {
+  const isHome = g.homeTeam?.abbrev === teamAbbrev;
+  const opp = isHome ? g.awayTeam : g.homeTeam;
+  const played = g.awayTeam?.score != null && g.homeTeam?.score != null;
+  const result = played ? gameResultFor(g, teamAbbrev) : null;
+  const date = new Date((g.gameDate || '') + 'T12:00:00');
+  const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
+  const kind = g.gameType === 1 ? '<span class="badge kind">PRE</span>'
+    : g.gameType === 3 ? '<span class="badge kind">PO</span>' : '';
+
+  const middle = played
+    ? `<span class="sr-score">${g.awayTeam.score}–${g.homeTeam.score}</span>`
+    : `<span class="sr-time">${esc(fmtTime(g.startTimeUTC) || '')}</span>`;
+  const chip = result
+    ? `<span class="result-chip ${result.win ? 'win' : 'loss'}">${esc(result.label)}</span>`
+    : '<span class="result-chip fut">—</span>';
+
+  return `<div class="season-row${result ? ` ${result.win ? 'won' : 'lost'}` : ''}">
+    <span class="sr-date">${esc(dayFmt.format(date))}</span>
+    <span class="sr-opp"><img src="${esc(opp?.logo || '')}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      ${isHome ? 'vs' : '@'} <b>${esc(opp?.abbrev || '')}</b> ${kind}</span>
+    ${middle}
+    ${chip}
+    <span class="sr-links">
+      <button class="btn btn-accent${detailAvailable ? '' : ' btn-ghost'}" data-open="${g.id}" data-date="${esc(g.gameDate || '')}">Game detail</button>
+      <a class="btn" href="${NHL_BASE}${esc(g.gameCenterLink || '')}" target="_blank" rel="noopener" title="Verify on the official NHL.com Game Center">NHL.com ↗</a>
+    </span>
+  </div>`;
 }
 
 /* ------------------------------------------------------------------ */

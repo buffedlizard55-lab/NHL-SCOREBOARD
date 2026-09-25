@@ -107,8 +107,78 @@ const routes = {
   '/v1/gamecenter/2026010024/boxscore': { ...boxscore, id: 2026010024 },
 };
 
+/* club-schedule-season fixtures (shape verified against the live official
+ * endpoint on 2026-09-25 — including previousSeason and empty eras) */
+function clubSchedule(team, season, games) {
+  return { previousSeason: season - 10001, currentSeason: season, clubTimezone: 'US/Eastern', games };
+}
+const schedTeam = (abbrev, id, commonName) => ({
+  id, commonName: { default: commonName }, placeName: { default: commonName }, abbrev,
+  logo: `https://assets.nhle.com/logos/nhl/svg/${abbrev}_light.svg`, awaySplitSquad: false,
+});
+const schedGame = (id, date, away, awayScore, home, homeScore, extra = {}) => ({
+  id, season: extra.season ?? 20262027, gameType: 2, gameDate: date,
+  venue: { default: 'Fixture Arena' }, neutralSite: false,
+  startTimeUTC: `${date}T23:00:00Z`, easternUTCOffset: '-04:00', venueUTCOffset: '-04:00',
+  venueTimezone: 'US/Eastern', gameState: 'OFF', gameScheduleState: 'OK', tvBroadcasts: [],
+  awayTeam: { ...schedTeam(away.abbr, 100, away.name), score: awayScore },
+  homeTeam: { ...schedTeam(home.abbr, 200, home.name), score: homeScore },
+  periodDescriptor: { number: 3, periodType: 'REG', maxRegulationPeriods: 3 },
+  gameOutcome: { lastPeriodType: 'REG' },
+  gameCenterLink: `/gamecenter/${away.abbr.toLowerCase()}-vs-${home.abbr.toLowerCase()}/2026/09/25/${id}`,
+  ...extra,
+});
+const CUR = 20262027, PREV = 20252026;
+for (const { abbr, id, name } of [
+  { abbr: 'BUF', id: 7, name: 'Sabres' }, { abbr: 'BOS', id: 6, name: 'Bruins' }, { abbr: 'COL', id: 21, name: 'Avalanche' },
+]) {
+  routes[`/v1/club-schedule-season/${abbr}/${CUR}`] = clubSchedule(abbr, CUR, [
+    schedGame(1, '2026-09-19', { abbr: 'BOS', name: 'Bruins' }, 2, { abbr, name }, 3, { id: 1, season: CUR, gameType: 1, gameState: 'FINAL' }),
+    schedGame(2, '2026-09-20', { abbr: 'COL', name: 'Avalanche' }, 4, { abbr, name }, 1, { id: 2, season: CUR, gameType: 1, gameState: 'FINAL' }),
+    schedGame(3, '2026-09-21', { abbr, name }, 1, { abbr: 'BOS', name: 'Bruins' }, 1, { id: 3, season: CUR, gameType: 1, gameState: 'OFF', gameOutcome: { lastPeriodType: 'REG' } }),
+    // 2026-09-24 is inside the verbatim live week (prevDate) — must NOT be archived.
+    schedGame(4, '2026-09-24', { abbr, name }, 2, { abbr: 'COL', name: 'Avalanche' }, 2, { id: 4, season: CUR, gameType: 1, gameState: 'FINAL' }),
+    // 2026-09-26 is in the future — must NOT be archived either.
+    schedGame(5, '2026-09-26', { abbr, name }, 0, { abbr: 'COL', name: 'Avalanche' }, 0, { id: 5, season: CUR, gameType: 1, gameState: 'FUT', gameOutcome: undefined, periodDescriptor: undefined }),
+  ]);
+  routes[`/v1/club-schedule-season/${abbr}/${PREV}`] = clubSchedule(abbr, PREV, [
+    schedGame(11, '2025-10-10', { abbr: 'BOS', name: 'Bruins' }, 1, { abbr, name }, 4, { id: 11, season: PREV, gameOutcome: { lastPeriodType: 'OT' } }),
+    schedGame(12, '2026-04-17', { abbr, name }, 5, { abbr: 'COL', name: 'Avalanche' }, 2, { id: 12, season: PREV }),
+  ]);
+  // A date with no club games (All-Star-type day) is intentionally absent.
+}
+/* score fixtures for the archive dates (2026-09-19/20/21 + 2025-10-10 + 2026-04-17) */
+function scoreDayFor(date, games) {
+  return { prevDate: date, currentDate: date, nextDate: date, gameWeek: [], oddsPartners: [], games };
+}
+const day = (d, m) => ({ period: 1, periodDescriptor: { number: 1, periodType: 'REG', maxRegulationPeriods: 3 }, timeInPeriod: '04:04', playerId: 1, name: { default: 'J. Faulk' }, firstName: { default: 'Justin' }, lastName: { default: 'Faulk' }, goalModifier: 'none', assists: [{ playerId: 2, name: { default: 'S. Aho' }, assistsToDate: 37 }], mugshot: '', teamAbbrev: m, goalsToDate: 5, awayScore: 1, homeScore: 0, strength: 'ev' });
+function archivedGame(id, date, awayAbbr, awayScore, homeAbbr, homeScore, state = 'OFF') {
+  return {
+    id, season: PREV, gameType: 2, gameDate: date, venue: { default: 'Fixture Arena' },
+    startTimeUTC: `${date}T23:00:00Z`, venueTimezone: 'US/Eastern', gameState: state, gameScheduleState: 'OK',
+    awayTeam: { id: 1, name: { default: awayAbbr }, abbrev: awayAbbr, score: awayScore, sog: 30, logo: '' },
+    homeTeam: { id: 2, name: { default: homeAbbr }, abbrev: homeAbbr, score: homeScore, sog: 28, logo: '' },
+    gameCenterLink: `/gamecenter/x/2026/09/25/${id}`,
+    periodDescriptor: { number: 3, periodType: 'REG', maxRegulationPeriods: 3 },
+    gameOutcome: { lastPeriodType: 'REG' },
+    goals: [day(date, awayAbbr)],
+  };
+}
+routes['/v1/score/2026-09-19'] = scoreDayFor('2026-09-19', [archivedGame(1, '2026-09-19', 'BOS', 2, 'BUF', 3, 'FINAL')]);
+routes['/v1/score/2026-09-20'] = scoreDayFor('2026-09-20', [archivedGame(2, '2026-09-20', 'COL', 4, 'BUF', 1, 'FINAL')]);
+routes['/v1/score/2026-09-21'] = scoreDayFor('2026-09-21', [archivedGame(3, '2026-09-21', 'BUF', 1, 'BOS', 1, 'OFF')]);
+routes['/v1/score/2025-10-10'] = scoreDayFor('2025-10-10', [archivedGame(11, '2025-10-10', 'BOS', 1, 'BUF', 4, 'OFF')]);
+routes['/v1/score/2026-04-17'] = scoreDayFor('2026-04-17', [archivedGame(12, '2026-04-17', 'BUF', 5, 'COL', 2, 'OFF')]);
+
+const requestCounts = {};
 createServer((req, res) => {
   const url = req.url.split('?')[0];
+  if (url === '/__requests') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(requestCounts));
+    return;
+  }
+  requestCounts[url] = (requestCounts[url] || 0) + 1;
   const body = routes[url];
   if (!body) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
