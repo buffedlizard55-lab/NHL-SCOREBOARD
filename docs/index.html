@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NHL Scoreboard — Live &amp; Historical Games</title>
+  <meta name="description" content="A clean scoreboard for every NHL game — live scores, play-by-play, box scores, standings, and full game history. All data comes from the NHL's official public API." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cellipse cx='50' cy='58' rx='42' ry='20' fill='%23171d29'/%3E%3Cellipse cx='50' cy='50' rx='42' ry='20' fill='%23e8edf5'/%3E%3Cellipse cx='50' cy='50' rx='30' ry='13' fill='none' stroke='%23171d29' stroke-width='4'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" id="brand" role="button" tabindex="0" aria-label="Go to scoreboard">
+        <svg class="puck" viewBox="0 0 100 100" aria-hidden="true">
+          <ellipse cx="50" cy="58" rx="42" ry="20" fill="#2a3446"/>
+          <ellipse cx="50" cy="50" rx="42" ry="20" fill="#e8edf5"/>
+          <ellipse cx="50" cy="50" rx="28" ry="12" fill="none" stroke="#171d29" stroke-width="5"/>
+        </svg>
+        <div>
+          <h1>NHL Scoreboard</h1>
+          <p class="tagline">live &amp; historical games · official NHL data</p>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab active" role="tab" aria-selected="true" data-view="board">Scores</button>
+        <button class="tab" role="tab" aria-selected="false" data-view="standings">Standings</button>
+        <button class="tab" role="tab" aria-selected="false" data-view="about">About &amp; Sources</button>
+      </nav>
+      <div class="status-area">
+        <span id="data-status" class="data-status" title="Where this data comes from">Loading…</span>
+        <button id="refresh-btn" class="btn btn-ghost" type="button" title="Refresh now">↻ Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================== SCOREBOARD ===================== -->
+    <section id="view-board" class="view">
+      <div class="board-controls">
+        <div class="date-nav">
+          <button id="prev-day" class="btn" type="button" title="Previous date with games">◀</button>
+          <input id="date-input" type="date" aria-label="Pick any date (history goes back to at least 2009-10)" />
+          <button id="today-btn" class="btn" type="button" title="Jump to the NHL's current focus date">Today</button>
+          <button id="next-day" class="btn" type="button" title="Next date with games">▶</button>
+        </div>
+        <div id="week-strip" class="week-strip" aria-label="Games this week"></div>
+      </div>
+      <div id="board-content" class="games-grid" aria-live="polite"></div>
+    </section>
+
+    <!-- ===================== GAME DETAIL ===================== -->
+    <section id="view-game" class="view" hidden>
+      <div id="game-content"></div>
+    </section>
+
+    <!-- ===================== STANDINGS ===================== -->
+    <section id="view-standings" class="view" hidden>
+      <div id="standings-content"></div>
+    </section>
+
+    <!-- ===================== ABOUT & SOURCES ===================== -->
+    <section id="view-about" class="view" hidden>
+      <div class="about">
+        <h2>What this is</h2>
+        <p>
+          A single, always-up-to-date scoreboard for <strong>every NHL game</strong> — today's slate,
+          live play-by-play, box scores, standings, and <strong>full game history</strong> (verified back to at
+          least the 2009–10 season). It exists so you never have to manually check multiple sites again:
+          one page, refreshed automatically, fed by the current official league feed.
+        </p>
+        <p>
+          <strong>Every number on this site comes from the NHL's own official public API</strong>
+          (<code>api-web.nhle.com</code> — the same service behind <a href="https://www.nhl.com/scores" rel="noopener">nhl.com/scores</a> and the
+          NHL.com Game Center). This project stores, caches, and displays that data; it never edits or invents it.
+          Each game links back to its official NHL.com Game Center page for manual review.
+        </p>
+
+        <h2>How the data gets here</h2>
+        <ol>
+          <li>A scheduled job (GitHub Actions, every 5 minutes) calls the official NHL endpoints directly, server-side.</li>
+          <li>The responses are written into this site as static JSON and redeployed — a fresh first-party snapshot.</li>
+          <li>Your browser loads those snapshots. For older games beyond the snapshot window, it asks the NHL API
+              directly and, because the NHL API sends no cross-origin (CORS) permission for third-party sites,
+              falls back to transparent pass-through transports. The source URL is always shown, so you can verify.</li>
+        </ol>
+
+        <h2>Official sources (verified line-by-line)</h2>
+        <p class="verified-on">Endpoints below were each exercised and their responses verified on <strong>2026-09-25</strong>. Click any link to inspect the raw JSON yourself.</p>
+        <div class="table-wrap">
+        <table class="src-table">
+          <thead><tr><th>Endpoint (official NHL)</th><th>What it provides</th><th>Verified</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://api-web.nhle.com/v1/score/now" rel="noopener">api-web.nhle.com/v1/score/now</a></td><td>Current scoreboard (today's focus date, week strip)</td><td>2026-09-25 ✅</td></tr>
+            <tr><td><a href="https://api-web.nhle.com/v1/score/2026-09-25" rel="noopener">api-web.nhle.com/v1/score/{date}</a></td><td>Every game on any date, scores + full scoring summary</td><td>2026-09-25 ✅ (tested 2010-01-15 → 2026-09-25)</td></tr>
+            <tr><td><a href="https://api-web.nhle.com/v1/gamecenter/2025030416/play-by-play" rel="noopener">api-web.nhle.com/v1/gamecenter/{id}/play-by-play</a></td><td>Complete official play-by-play event feed</td><td>2026-09-25 ✅ (tested 2019 &amp; 2026 games)</td></tr>
+            <tr><td><a href="https://api-web.nhle.com/v1/gamecenter/2025030416/boxscore" rel="noopener">api-web.nhle.com/v1/gamecenter/{id}/boxscore</a></td><td>Full box score: skater &amp; goalie stats per game</td><td>2026-09-25 ✅ (tested 2019 &amp; 2026 games)</td></tr>
+            <tr><td><a href="https://api-web.nhle.com/v1/standings/now" rel="noopener">api-web.nhle.com/v1/standings/now</a></td><td>Current / final league standings</td><td>2026-09-25 ✅</td></tr>
+            <tr><td><a href="https://www.nhl.com/scores" rel="noopener">nhl.com/scores</a></td><td>Official human-readable scoreboard (manual review)</td><td>linked on every game card</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <h2>Known limitations (flagged for review)</h2>
+        <ul>
+          <li><strong>Refresh cadence:</strong> the snapshot rebuilds every 5 minutes (GitHub Actions' finest cron). Live games are therefore at most ~5 minutes behind the official feed.</li>
+          <li><strong>CORS:</strong> the NHL APIs send no <code>Access-Control-Allow-Origin</code> header (verified via raw header inspection on 2026-09-25), so a static site cannot read them directly from your browser. Snapshot + documented fallbacks handle this.</li>
+          <li><strong>Scheduled workflows:</strong> GitHub disables cron workflows after 60 days of repository inactivity; re-enable from the Actions tab if the snapshot stops refreshing.</li>
+          <li><strong>Anomaly flagged 2026-09-25:</strong> <code>api.nhle.com/stats/rest/en/score/scores</code> (the historical stats-API scores report) returns HTTP 404 while other reports on the same domain work. Not relied on by this site.</li>
+          <li><strong>Preseason &amp; special events</strong> are included (the official feed serves them); very old eras before the API's history window are out of scope.</li>
+        </ul>
+
+        <h2>Disclaimer</h2>
+        <p class="fine">
+          This is an unofficial fan tool. All game data, team names, and logos are property of the
+          National Hockey League and are fetched from its official public endpoints. No affiliation with or
+          endorsement by the NHL. For wagering or official records, always use
+          <a href="https://www.nhl.com" rel="noopener">nhl.com</a>.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <span>Data: official NHL public API (<a href="https://api-web.nhle.com/v1/score/now" rel="noopener">api-web.nhle.com</a>) · Unofficial project · Not affiliated with the NHL</span>
+      <span class="footer-links">
+        <a href="https://www.nhl.com/scores" rel="noopener">NHL.com Scores</a> ·
+        <a href="https://www.nhl.com/standings" rel="noopener">NHL.com Standings</a> ·
+        <a href="https://github.com/buffedlizard55-lab/NHL-SCOREBOARD" rel="noopener">Source on GitHub</a>
+      </span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Build outputs (regenerated on every deploy by tools/build-site.mjs)
+dist/
+
+# Node
+node_modules/
+
+# OS/editor noise
+.DS_Store
+.test-dist/
