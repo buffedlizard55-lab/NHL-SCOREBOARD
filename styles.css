@@ -387,6 +387,59 @@ table.std tr.wc-cut td { border-top: 2px solid var(--accent); }
 .wc-flag { color: var(--warn); font-size: 10px; font-weight: 800; margin-left: 6px; }
 .div-chip { color: var(--faint); font-size: 11px; margin-left: 6px; }
 
+/* seasons browser */
+.season-controls {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 12px 14px;
+}
+.season-controls label {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 13px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.season-controls select {
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 10px; font-size: 14px; font-weight: 500;
+}
+.season-controls .hint { flex: 1; min-width: 200px; text-align: right; }
+.record-strip {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 13.5px; color: var(--muted);
+}
+.record-strip b { color: var(--text); font-size: 15px; margin-right: 2px; }
+.record-strip .pts b { color: var(--accent); }
+.record-strip .hint { flex: 1; min-width: 180px; text-align: right; font-size: 12px; }
+.season-group { margin-bottom: 18px; }
+.season-month {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--faint); margin: 10px 2px 6px;
+}
+.season-row {
+  display: grid;
+  grid-template-columns: 64px minmax(140px, 1fr) 90px 74px auto;
+  align-items: center; gap: 10px;
+  padding: 8px 12px; margin-bottom: 6px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+}
+.season-row.won { border-left: 3px solid var(--good); }
+.season-row.lost { border-left: 3px solid var(--live); }
+.sr-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.sr-opp { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.sr-opp img { width: 26px; height: 26px; object-fit: contain; }
+.sr-score { font-size: 15px; font-weight: 700; text-align: center; }
+.sr-time { color: var(--muted); font-size: 13px; text-align: center; }
+.result-chip {
+  font-size: 11.5px; font-weight: 800; text-align: center;
+  border-radius: 6px; padding: 3px 0;
+}
+.result-chip.win { color: var(--good); background: rgba(62, 207, 142, 0.12); }
+.result-chip.loss { color: var(--live); background: rgba(255, 77, 94, 0.12); }
+.result-chip.fut { color: var(--faint); background: var(--card-2); }
+.sr-links { display: flex; gap: 8px; justify-content: flex-end; }
+
 /* about */
 .about { max-width: 860px; }
 .about h2 { font-size: 17px; margin: 26px 0 8px; }
@@ -422,4 +475,7 @@ footer {
   .gh-team .big-score { font-size: 28px; }
   .pbp-row { grid-template-columns: 78px 1fr; }
   .pbp-row .p-type { grid-column: 2; }
+  .season-row { grid-template-columns: 60px 1fr 70px 60px; }
+  .season-row .sr-links { grid-column: 1 / -1; justify-content: flex-start; }
+  .season-controls .hint { text-align: left; }
 }
