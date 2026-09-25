@@ -28,7 +28,13 @@ on:
       - '.github/workflows/deploy.yml'
   schedule:
     # GitHub cron: minimum granularity is 5 minutes. Times are UTC.
-    - cron: '*/5 * * * *'
+    # Offsets of :03/:08/... avoid the congested top-of-hour slot, where
+    # GitHub documents schedule delays are most likely.
+    # NOTE (found 2026-09-25): newly created schedules can take 15 min to
+    # over an hour before their first run, and push/workflow_dispatch runs
+    # work meanwhile. If scheduled runs ever stop, edit this cron (any
+    # change re-registers the schedule) or run the workflow manually.
+    - cron: '3-58/5 * * * *'
   workflow_dispatch: {}
 
 permissions:
