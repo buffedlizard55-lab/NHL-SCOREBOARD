@@ -221,9 +221,14 @@ node tools/test-ui.mjs      # optional: boots the real app in jsdom and clicks e
 6. **Dates with no club games** (e.g., All-Star weekend events) are not discovered by the
    club-schedule-driven archive; those specific dates fall back to transports/official links.
 7. **GitHub disables cron workflows after 60 days of repo inactivity.** If the snapshot stops
-   refreshing, re-enable the workflow from the Actions tab (one click). Newly added schedules can
-   also take a while before their first run; any push to main never harms freshness because
-   push-triggered runs use the exact same job.
+   refreshing, re-enable the workflow from the Actions tab (one click). **Flagged 2026-09-25
+   (session 2):** the freshly created `*/5` schedule produced **zero** scheduled runs for ~3 hours
+   while push-triggered runs worked fine — a known GitHub behavior for newly created schedules
+   (recognition can take 15 min to 1 h+, sometimes longer; see the Actions tab → filter
+   `event:schedule`). Mitigations applied: a manual-run path that always works, and a cron change
+   (`3-58/5`, avoiding the congested top-of-hour slot) to force schedule re-registration. If the
+   feed ever looks stale, check the Actions tab first, then edit the cron or run the workflow
+   manually — the push-triggered job is identical.
 8. **Repo growth is bounded but real:** the archive adds roughly 1-2 MB per season (immutable,
    committed once). The current season's index files refresh every ~6 hours while games change
    state. If history grows beyond a few hundred MB some day, squash or move older seasons to
