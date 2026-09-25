@@ -7,8 +7,21 @@
   <meta name="description" content="A clean scoreboard for every NHL game — live scores, play-by-play, box scores, standings, and full game history. All data comes from the NHL's official public API." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cellipse cx='50' cy='58' rx='42' ry='20' fill='%23171d29'/%3E%3Cellipse cx='50' cy='50' rx='42' ry='20' fill='%23e8edf5'/%3E%3Cellipse cx='50' cy='50' rx='30' ry='13' fill='none' stroke='%23171d29' stroke-width='4'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
+  <meta name="theme-color" content="#0b0f17" />
 </head>
 <body>
+  <noscript>
+    <div style="max-width:640px;margin:40px auto;padding:20px;font-family:system-ui,sans-serif">
+      <h2>NHL Scoreboard needs JavaScript</h2>
+      <p>This page renders live official NHL data client-side. Without JavaScript you can still
+      read the official sources directly:</p>
+      <ul>
+        <li><a href="https://www.nhl.com/scores">NHL.com Scores (official)</a></li>
+        <li><a href="https://www.nhl.com/standings">NHL.com Standings (official)</a></li>
+        <li><a href="https://api-web.nhle.com/v1/score/now">Raw official scoreboard JSON</a></li>
+      </ul>
+    </div>
+  </noscript>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand" id="brand" role="button" tabindex="0" aria-label="Go to scoreboard">

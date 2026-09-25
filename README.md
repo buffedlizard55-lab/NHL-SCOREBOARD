@@ -174,7 +174,10 @@ node tools/test-app.mjs     # unit-tests app.js logic in a stubbed browser conte
    ~10 builds/hour, so on heavy game days a publish can lag its commit slightly; off-season the
    data barely changes, so almost no builds are triggered.
 5. **GitHub disables cron workflows after 60 days of repo inactivity.** If the snapshot stops
-   refreshing, re-enable the workflow from the Actions tab (one click).
+   refreshing, re-enable the workflow from the Actions tab (one click). Also note GitHub can
+   delay cron runs during Actions peak load, and newly added schedules may take a while before
+   their first run; any push to main (including data commits) never harms freshness because
+   push-triggered runs use the exact same job.
 6. **Preseason included.** The official feed currently serves 2026-27 preseason games
    (`gameType: 1`); the site labels them `PRE`. Standings show the last completed season
    (official behavior between seasons).
