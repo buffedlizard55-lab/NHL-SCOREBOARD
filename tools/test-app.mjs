@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const src = readFileSync(path.join(ROOT, 'docs', 'app.js'), 'utf8');
+const src = readFileSync(path.join(ROOT, 'app.js'), 'utf8');
 
 function makeEl(extra = {}) {
   return {

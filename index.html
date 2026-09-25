@@ -79,7 +79,8 @@
         <h2>How the data gets here</h2>
         <ol>
           <li>A scheduled job (GitHub Actions, every 5 minutes) calls the official NHL endpoints directly, server-side.</li>
-          <li>The responses are written into this site as static JSON and redeployed — a fresh first-party snapshot.</li>
+          <li>The responses are committed to this repository as static JSON; GitHub Pages republishes the branch
+              automatically — a fresh first-party snapshot with no middleman.</li>
           <li>Your browser loads those snapshots. For older games beyond the snapshot window, it asks the NHL API
               directly and, because the NHL API sends no cross-origin (CORS) permission for third-party sites,
               falls back to transparent pass-through transports. The source URL is always shown, so you can verify.</li>

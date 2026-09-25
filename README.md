@@ -100,22 +100,24 @@ curl -s "https://api-web.nhle.com/v1/standings/now" | head -c 400
  │ GitHub Actions (deploy.yml)  │ ───────────────▶ │ Official NHL API           │
  │  node tools/build-site.mjs   │ ◀─────────────── │ api-web.nhle.com/v1 (NHL)  │
  └──────────────┬───────────────┘   official JSON  └────────────────────────────┘
-                │ docs/ + fresh data/*.json
+                │ commits fresh data/*.json to main (only when changed)
                 ▼
-        GitHub Pages (static)  ──▶  your browser renders everything locally
+  GitHub Pages serves main branch (nojekyll)  ──▶  your browser renders locally
 ```
 
 1. `tools/build-site.mjs` fetches the **official** scoreboard (`/v1/score/now`), the surrounding
    week, previous day, standings, and play-by-play + box score for every non-future game in that
    window — directly from `api-web.nhle.com`, server-side.
-2. The responses are written verbatim into `data/*.json` and the site is deployed. The browser
-   never has to trust us: payloads are the API's own JSON, and every game links to NHL.com.
+2. The responses are written verbatim into `data/*.json` and committed to `main` when changed;
+   GitHub Pages (serving this branch, `.nojekyll`) republishes automatically. The browser never
+   has to trust us: payloads are the API's own JSON, and every game links to NHL.com.
 3. For games outside the snapshot window (any historical game), the browser asks the NHL API
    directly; because the NHL API sends **no CORS headers** (verified below), static sites fall
    back to transparent pass-through transports — the status bar always shows which path was used,
    and every game page links to the official Game Center for manual review.
-4. If the scheduled fetch fails, the deploy job fails and the **previous snapshot stays live** —
-   the site never serves a broken or fabricated page.
+4. Failure-safe: the snapshot is built in a staging directory and swapped in only on success.
+   If the official scoreboard can't be fetched, nothing is committed and the **previous snapshot
+   stays live** — the site never serves a broken or fabricated page.
 
 ### Why the snapshot design (verified constraint, not preference)
 
@@ -129,18 +131,21 @@ official data server-side in the deploy pipeline is the most reliable CORS-free 
 
 ## 🗂 Repository layout
 
+GitHub Pages serves the **main branch root** (with `.nojekyll`), so the site files live at the
+top level:
+
 ```
-docs/                     The GitHub Pages site (vanilla HTML/CSS/JS, zero dependencies)
-  index.html              App shell + About/Sources tab content
-  styles.css              Clean dark UI
-  app.js                  Scoreboard, game detail, standings, transport layer, live polling
+index.html                App shell + About/Sources tab content
+styles.css                Clean dark UI
+app.js                    Scoreboard, game detail, standings, transport layer, live polling
+data/                     Official NHL JSON snapshots (committed by the scheduled workflow)
 tools/
-  build-site.mjs          Deploy-time fetch of official NHL data (Node 20, no deps)
+  build-site.mjs          Server-side fetch of official NHL data (Node 20, no deps)
   fixture-server.mjs      Local mock of the API shape (tests only)
-  test-build.mjs          End-to-end test of the build pipeline
+  test-build.mjs          End-to-end test of the snapshot pipeline
   test-app.mjs            Unit tests for the app's core logic
 .github/workflows/
-  deploy.yml              push + every-5-minutes + manual → build w/ fresh data → Pages
+  deploy.yml              every-5-minutes + manual → fetch official data → commit if changed
 ```
 
 ### Local development & tests
@@ -165,7 +170,9 @@ node tools/test-app.mjs     # unit-tests app.js logic in a stubbed browser conte
    confirmed by failed connection in this repo's research pass). Nothing here depends on it.
 4. **Live cadence ≈ 5 minutes**, the finest cron GitHub Actions allows. The official feed itself
    updates within seconds; closing this gap would require a push/WebSocket source or a small
-   server — see roadmap.
+   server — see roadmap. Also: Pages rebuilds from the branch have a documented soft limit of
+   ~10 builds/hour, so on heavy game days a publish can lag its commit slightly; off-season the
+   data barely changes, so almost no builds are triggered.
 5. **GitHub disables cron workflows after 60 days of repo inactivity.** If the snapshot stops
    refreshing, re-enable the workflow from the Actions tab (one click).
 6. **Preseason included.** The official feed currently serves 2026-27 preseason games
