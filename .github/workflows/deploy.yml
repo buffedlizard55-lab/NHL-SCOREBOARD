@@ -1,0 +1,61 @@
+# Builds the static scoreboard with a FRESH snapshot of official NHL data and
+# deploys it to GitHub Pages.
+#
+# Runs:
+#   - on every push to main (site/code changes)
+#   - every 5 minutes (keeps live scores/play-by-play current)
+#   - manually from the Actions tab (workflow_dispatch)
+#
+# The NHL API (api-web.nhle.com) sends no CORS headers, so the browser cannot
+# read it from a static site. This workflow fetches the data server-side from
+# NHL's official endpoints and ships it as static JSON — first-party data,
+# no third-party dependencies.
+name: Deploy NHL scoreboard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # GitHub cron: minimum granularity is 5 minutes. Times are UTC.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer run supersedes a queued one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build site with fresh official NHL data
+        run: node tools/build-site.mjs
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
