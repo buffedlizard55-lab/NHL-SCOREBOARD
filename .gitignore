@@ -1,5 +1,5 @@
-# Build outputs (regenerated on every deploy by tools/build-site.mjs)
-dist/
+# Staging area used by tools/build-site.mjs (only data/ is published)
+data.staging/
 
 # Node
 node_modules/

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * NHL-SCOREBOARD build script (run by GitHub Actions, Node 20+, no dependencies).
+ * NHL-SCOREBOARD data snapshot (run by GitHub Actions, Node 20+, no dependencies).
  *
- * Copies the static site from docs/ into dist/, then fetches LIVE, official
- * NHL data straight from the NHL's own public API (api-web.nhle.com — the
- * same API that powers nhl.com) and writes it into dist/data/ so the static
- * GitHub Pages site always ships with a fresh, first-party data snapshot.
+ * Fetches LIVE, official NHL data straight from the NHL's own public API
+ * (api-web.nhle.com — the same API that powers nhl.com) and writes it
+ * verbatim into ./data/ at the repository root. GitHub Pages serves this
+ * repo's main branch directly, so committing these files publishes a fresh,
+ * first-party snapshot of the league's data.
  *
  * Why server-side fetching? The NHL API sends no Access-Control-Allow-Origin
  * header (verified 2026-09-25 via raw HTTP header inspection), so browsers
@@ -18,21 +19,24 @@
  *   GET https://api-web.nhle.com/v1/standings/now        -> current/final standings
  *   GET https://api-web.nhle.com/v1/gamecenter/{id}/play-by-play
  *   GET https://api-web.nhle.com/v1/gamecenter/{id}/boxscore
+ *
+ * Exit codes: 0 = snapshot written (even if some per-game fetches failed);
+ *             1 = core scoreboard unavailable → the caller must NOT publish,
+ *                 leaving the previous snapshot live.
  */
 
-import { cpSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
 // Overridable via env for local testing; defaults to the official NHL API.
 const API_BASE = process.env.NHL_API_BASE || 'https://api-web.nhle.com/v1';
+const DATA_DIR = process.env.NHL_DATA_DIR || path.join(process.cwd(), 'data');
+// Build into staging, then swap atomically at the end — a failed run must
+// never wipe the previously published snapshot.
+const STAGING_DIR = `${DATA_DIR}.staging`;
+const GAMES_DIR = path.join(STAGING_DIR, 'games');
 const USER_AGENT =
   'NHL-SCOREBOARD/1.0 (+https://github.com/buffedlizard55-lab/NHL-SCOREBOARD)';
-
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const DOCS_DIR = path.join(ROOT, 'docs');
-const DIST_DIR = process.env.NHL_DIST_DIR || path.join(ROOT, 'dist');
-const DATA_DIR = path.join(DIST_DIR, 'data');
-const GAMES_DIR = path.join(DATA_DIR, 'games');
 
 const REQUEST_DELAY_MS = 150; // be polite to the API
 const MAX_GAMES_PER_DATE = 20; // detail snapshots per date (safety cap)
@@ -54,8 +58,7 @@ async function getJSON(url, tries = 3) {
       });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      return json;
+      return await res.json();
     } catch (err) {
       clearTimeout(timer);
       if (attempt === tries) {
@@ -73,34 +76,34 @@ function sleep(ms) {
 }
 
 function writeJSON(relPath, json) {
-  const full = path.join(DATA_DIR, relPath);
+  const full = path.join(STAGING_DIR, relPath);
   mkdirSync(path.dirname(full), { recursive: true });
   writeFileSync(full, JSON.stringify(json));
 }
 
+function readWrittenJSON(relPath) {
+  try {
+    return JSON.parse(readFileSync(path.join(STAGING_DIR, relPath), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  // 1) Stage the static site.
-  rmSync(DIST_DIR, { recursive: true, force: true });
-  cpSync(DOCS_DIR, DIST_DIR, { recursive: true });
+  // Start from a clean staging snapshot (every file is regenerated below).
+  rmSync(STAGING_DIR, { recursive: true, force: true });
   mkdirSync(GAMES_DIR, { recursive: true });
 
-  // 2) Today's scoreboard. /score/now redirects to /score/{currentDate}.
+  // 1) Today's scoreboard. /score/now redirects to /score/{currentDate}.
   const scoreNow = await getJSON(`${API_BASE}/score/now`);
   if (!scoreNow || !scoreNow.currentDate) {
-    // Without the core scoreboard we must NOT deploy: fail the job so the
-    // previous site stays live.
-    writeJSON('manifest.json', {
-      generatedAt: new Date().toISOString(),
-      apiBase: API_BASE,
-      fatal: 'Unable to fetch https://api-web.nhle.com/v1/score/now',
-      errors,
-    });
-    console.error('FATAL: could not fetch /v1/score/now — keeping previous deployment.');
+    rmSync(STAGING_DIR, { recursive: true, force: true });
+    console.error('FATAL: could not fetch /v1/score/now — keeping previous snapshot.');
     process.exit(1);
   }
   const currentDate = scoreNow.currentDate;
 
-  // 3) Scoreboard payloads: the focus date, the previous date ("last night"),
+  // 2) Scoreboard payloads: the focus date, the previous date ("last night"),
   //    and every date in the API's week strip.
   const scoreDates = new Set([currentDate]);
   if (scoreNow.prevDate) scoreDates.add(scoreNow.prevDate);
@@ -118,7 +121,7 @@ async function main() {
     await sleep(REQUEST_DELAY_MS);
   }
 
-  // 4) Standings.
+  // 3) Standings.
   const standings = await getJSON(`${API_BASE}/standings/now`);
   if (standings) {
     writeJSON('standings-now.json', standings);
@@ -126,7 +129,7 @@ async function main() {
   }
   await sleep(REQUEST_DELAY_MS);
 
-  // 5) Game detail (play-by-play + boxscore) for every non-future game on the
+  // 4) Game detail (play-by-play + boxscore) for every non-future game on the
   //    focus date and the previous date — this covers the everyday use case
   //    (today's slate + last night's results) with zero third-party hops.
   const detailDates = new Set([currentDate]);
@@ -134,9 +137,8 @@ async function main() {
 
   let snapshotted = 0;
   for (const date of [...detailDates].sort()) {
-    const key = `score:${date}`;
-    if (!files[key]) continue;
-    const payload = await readWrittenJSON(path.join(DATA_DIR, `score-${date}.json`));
+    if (!files[`score:${date}`]) continue;
+    const payload = readWrittenJSON(`score-${date}.json`);
     const games = (payload && payload.games) || [];
     let count = 0;
     for (const game of games) {
@@ -162,7 +164,7 @@ async function main() {
     }
   }
 
-  // 6) Manifest — the app reads this first.
+  // 5) Manifest — the app reads this first.
   const manifest = {
     generatedAt: new Date().toISOString(),
     apiBase: API_BASE,
@@ -184,8 +186,13 @@ async function main() {
   };
   writeJSON('manifest.json', manifest);
 
+  // Success: swap staging into place atomically.
+  rmSync(DATA_DIR, { recursive: true, force: true });
+  mkdirSync(path.dirname(DATA_DIR), { recursive: true });
+  renameSync(STAGING_DIR, DATA_DIR);
+
   console.log(
-    `Built snapshot for ${currentDate}: ${Object.keys(files).length} files, ` +
+    `Snapshot for ${currentDate}: ${Object.keys(files).length} files, ` +
       `${snapshotted} games detailed, ${errors.length} fetch errors.`
   );
   if (errors.length > 0) {
@@ -193,17 +200,7 @@ async function main() {
   }
 }
 
-/** Read back a JSON file we just wrote (so we reuse exact API payloads). */
-async function readWrittenJSON(fullPath) {
-  try {
-    const { readFileSync } = await import('node:fs');
-    return JSON.parse(readFileSync(fullPath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
 main().catch((err) => {
-  console.error('Unexpected build failure:', err);
+  console.error('Unexpected snapshot failure:', err);
   process.exit(1);
 });
